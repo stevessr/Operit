@@ -303,6 +303,7 @@ dependencies {
     // Coroutine
     implementation(libs.coroutines.core)
     implementation(libs.coroutines.android)
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactive:1.7.3")
 
     // ObjectBox
     implementation(libs.objectbox.kotlin)

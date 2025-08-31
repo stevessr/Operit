@@ -219,7 +219,7 @@ fun MCPConfigScreen() {
                 // 遍历已安装的插件，获取每个插件的工具信息
                 for (pluginId in installedPlugins) {
                     try {
-                        val client = MCPBridgeClient(context, pluginId)
+                        val client = com.ai.assistance.operit.data.mcp.McpClientProvider.getClient(context, pluginId)
                         val serviceInfo = client.getServiceInfo()
                         
                         if (serviceInfo != null && serviceInfo.active && serviceInfo.toolNames.isNotEmpty()) {
@@ -796,7 +796,10 @@ fun MCPConfigScreen() {
                         onClick = {
                             pluginLoadingState.reset() // 确保每次都重置状态
                             pluginLoadingState.show()
-                            pluginLoadingState.initializeMCPServer(context, scope)
+                            scope.launch {
+                                val starter = MCPStarter(context)
+                                starter.startAllDeployedPlugins(pluginLoadingState)
+                            }
                         },
                         containerColor = MaterialTheme.colorScheme.secondaryContainer,
                         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,

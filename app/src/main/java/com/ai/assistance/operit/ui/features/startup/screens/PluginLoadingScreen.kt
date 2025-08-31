@@ -427,7 +427,7 @@ interface SkipLoadingCallback {
  *
  * 用于管理插件加载过程中的各种状态
  */
-class PluginLoadingState {
+class PluginLoadingState : MCPStarter.PluginStartProgressListener {
     // 进度值 (0.0f - 1.0f)
     private val _progress = MutableStateFlow(0f)
     val progress: StateFlow<Float> = _progress

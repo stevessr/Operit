@@ -189,37 +189,32 @@ class MCPStarter(private val context: Context) {
                     statusCallback(StartStatus.Error("Remote service is missing endpoint: $pluginId"))
                     return false
                 }
-                
-                if (!initBridge()) {
-                    statusCallback(StartStatus.Error("Failed to initialize bridge for remote service"))
+
+                try {
+                    Log.d(TAG, "Starting native MCP client for remote service: $serverName at $endpoint")
+                    // The NativeMcpClient will handle its own creation and registration with the manager
+                    val client = com.ai.assistance.operit.data.mcp.McpClientProvider.getClient(context, pluginId)
+                    
+                    // The client is connected on-demand, but we ping here to verify and provide feedback
+                    val isConnected = client.ping()
+                    
+                    if (isConnected) {
+                        statusCallback(StartStatus.Success("Remote service $pluginId connected successfully"))
+                        // Update our local status to reflect it's active
+                        mcpLocalServer.updateServerStatus(pluginId, active = true)
+                        return true
+                    } else {
+                        statusCallback(StartStatus.Error("Failed to connect to remote MCP service"))
+                        // Ensure the client is cleaned up if the initial connection fails
+                        (client as? com.ai.assistance.operit.data.mcp.native.NativeMcpClient)?.disconnect()
+                        mcpLocalServer.updateServerStatus(pluginId, active = false)
+                        return false
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error starting native remote service", e)
+                    statusCallback(StartStatus.Error("Start error: ${e.message}"))
                     return false
                 }
-
-                val bridge = MCPBridge.getInstance(context)
-
-                // Register remote service with the bridge
-                val registerResult = bridge.registerMcpService(
-                    name = serverName,
-                    type = "remote",
-                    endpoint = endpoint,
-                    connectionType = connectionType,
-                    description = "Remote MCP Server: $pluginId"
-                )
-
-                if (registerResult == null || !registerResult.optBoolean("success", false)) {
-                    statusCallback(StartStatus.Error("Failed to register remote MCP service"))
-                    return false
-                }
-                
-                // "Spawn" the remote service to trigger a connection
-                val spawnResult = bridge.spawnMcpService(serverName)
-                if (spawnResult == null || !spawnResult.optBoolean("success", false)) {
-                     statusCallback(StartStatus.Error("Failed to connect to remote MCP service"))
-                    return false
-                }
-
-                statusCallback(StartStatus.Success("Remote service $pluginId connected successfully"))
-                return true
             }
 
             // --- Existing logic for local plugins ---

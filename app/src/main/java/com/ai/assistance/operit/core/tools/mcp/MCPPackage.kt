@@ -4,7 +4,8 @@ import android.content.Context
 import com.ai.assistance.operit.core.tools.PackageTool
 import com.ai.assistance.operit.core.tools.PackageToolParameter
 import com.ai.assistance.operit.core.tools.ToolPackage
-import com.ai.assistance.operit.data.mcp.plugins.MCPBridgeClient
+import com.ai.assistance.operit.data.mcp.McpClientProvider
+import org.json.JSONObject
 import com.ai.assistance.operit.ui.permissions.ToolCategory
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
@@ -30,13 +31,13 @@ data class MCPPackage(
          * @return 创建的MCP包，如果连接失败则返回null
          */
         fun fromServer(context: Context, serverConfig: MCPServerConfig): MCPPackage? {
-            // 创建桥接客户端
-            val bridgeClient = MCPBridgeClient(context, serverConfig.name)
+            // 使用McpClientProvider获取客户端
+            val client = McpClientProvider.getClient(context, serverConfig.name)
             android.util.Log.d(TAG, "正在连接到MCP服务器: ${serverConfig.name}")
 
             try {
                 // 尝试连接
-                val connected = runBlocking { bridgeClient.connect() }
+                val connected = runBlocking { client.connect() }
                 if (!connected) {
                     android.util.Log.w(TAG, "无法连接到MCP服务器: ${serverConfig.name}")
                     return null
@@ -45,7 +46,7 @@ data class MCPPackage(
                 android.util.Log.d(TAG, "成功连接到MCP服务器: ${serverConfig.name}，开始获取工具列表")
 
                 // 获取工具列表
-                val jsonTools = runBlocking { bridgeClient.getTools() }
+                val jsonTools = runBlocking { client.getTools() }
                 if (jsonTools.isEmpty()) {
                     android.util.Log.w(TAG, "MCP服务器 ${serverConfig.name} 没有提供任何工具")
                     // 不要因为没有工具就返回null
@@ -58,7 +59,7 @@ data class MCPPackage(
 
                 // 将JSONObject工具转换为MCPTool
                 val mcpTools =
-                        jsonTools.mapNotNull { jsonTool ->
+                        jsonTools.mapNotNull { jsonTool: JSONObject ->
                             try {
                                 // 提取工具信息
                                 val name = jsonTool.optString("name", "")
@@ -75,15 +76,15 @@ data class MCPPackage(
                                 val propertiesObj = inputSchema?.optJSONObject("properties")
                                 val requiredArray = inputSchema?.optJSONArray("required")
 
-                                propertiesObj?.keys()?.forEach { paramName ->
+                                propertiesObj?.keys()?.forEach { paramName: String ->
                                     val paramObj = propertiesObj.optJSONObject(paramName)
                                     if (paramObj != null) {
                                         val paramDescription = paramObj.optString("description", "")
                                         val paramType = paramObj.optString("type", "string")
-                                        val paramRequired =
+                                        val paramRequired: Boolean =
                                                 requiredArray?.let { required ->
-                                                    (0 until required.length()).any {
-                                                        required.optString(it) == paramName
+                                                    (0 until required.length()).any { i: Int ->
+                                                        required.optString(i) == paramName
                                                     }
                                                 }
                                                         ?: false
@@ -113,7 +114,7 @@ data class MCPPackage(
             } catch (e: Exception) {
                 android.util.Log.e(TAG, "创建MCP包时出错: ${e.message}", e)
                 // 只有在发生异常时才断开连接
-                bridgeClient.disconnect()
+                client.disconnect()
                 return null
             }
         }

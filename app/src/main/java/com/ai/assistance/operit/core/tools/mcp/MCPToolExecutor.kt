@@ -4,7 +4,8 @@ import android.content.Context
 import android.util.Log
 import com.ai.assistance.operit.core.tools.StringResultData
 import com.ai.assistance.operit.core.tools.ToolExecutor
-import com.ai.assistance.operit.data.mcp.plugins.MCPBridgeClient
+import com.ai.assistance.operit.data.mcp.IMcpClient
+import com.ai.assistance.operit.data.mcp.McpClientProvider
 import com.ai.assistance.operit.data.model.AITool
 import com.ai.assistance.operit.data.model.ToolResult
 import com.ai.assistance.operit.data.model.ToolValidationResult
@@ -38,7 +39,7 @@ class MCPToolExecutor(private val context: Context, private val mcpManager: MCPM
         val serverName = toolNameParts[0]
         val actualToolName = toolNameParts.subList(1, toolNameParts.size).joinToString(":")
 
-        // 获取MCP桥接客户端
+        // 获取MCP客户端
         val mcpClient = mcpManager.getOrCreateClient(serverName)
         if (mcpClient == null) {
             return ToolResult(
@@ -60,11 +61,13 @@ class MCPToolExecutor(private val context: Context, private val mcpManager: MCPM
         // 自动类型转换处理
         val convertedParameters = convertParameterTypes(parameters, toolInfo)
 
-        // 调用MCP工具 - 使用同步版本
+                        // 调用MCP工具 - 使用异步版本转同步
         val result =
                 try {
-                    // 直接调用工具
-                    val jsonResponse = mcpClient.callToolSync(actualToolName, convertedParameters)
+                    // 调用工具
+                    val jsonResponse = kotlinx.coroutines.runBlocking { 
+                        mcpClient.callTool(actualToolName, JSONObject(convertedParameters))
+                    }
 
                     if (jsonResponse != null) {
                         Log.d(TAG, "MCP工具调用成功: $serverName:$actualToolName")
@@ -81,10 +84,10 @@ class MCPToolExecutor(private val context: Context, private val mcpManager: MCPM
                         // 检查是否有详细错误可以提取
                         try {
                             // 尝试从客户端内部获取错误响应
-                            val errorField =
+                            val errorMethod =
                                     mcpClient.javaClass.getDeclaredMethod("getLastErrorResponse")
-                            errorField.isAccessible = true
-                            val errorResponse = errorField.invoke(mcpClient) as? JSONObject
+                            errorMethod.isAccessible = true
+                            val errorResponse = errorMethod.invoke(mcpClient) as? JSONObject
 
                             if (errorResponse != null) {
                                 val error = errorResponse.optJSONObject("error")
@@ -230,9 +233,8 @@ class MCPManager(private val context: Context) {
         }
     }
 
-    // 缓存已创建的MCP桥接客户端，避免重复创建
-    private val clientCache =
-            ConcurrentHashMap<String, com.ai.assistance.operit.data.mcp.plugins.MCPBridgeClient>()
+    // 缓存已创建的MCP客户端，避免重复创建
+    private val clientCache = ConcurrentHashMap<String, IMcpClient>()
 
     // 缓存服务器配置
     private val serverConfigCache = ConcurrentHashMap<String, MCPServerConfig>()
@@ -257,14 +259,12 @@ class MCPManager(private val context: Context) {
     }
 
     /**
-     * 获取或创建MCP桥接客户端
+     * 获取或创建MCP客户端
      *
      * @param serverName 服务器名称
-     * @return MCP桥接客户端，如果服务器不存在或无法连接则返回null
+     * @return MCP客户端，如果服务器不存在或无法连接则返回null
      */
-    fun getOrCreateClient(
-            serverName: String
-    ): com.ai.assistance.operit.data.mcp.plugins.MCPBridgeClient? {
+    fun getOrCreateClient(serverName: String): IMcpClient? {
         // 检查缓存中是否已有客户端
         val cachedClient = clientCache[serverName]
         if (cachedClient != null) {
@@ -290,9 +290,8 @@ class MCPManager(private val context: Context) {
         val serverConfig = serverConfigCache[serverName] ?: return null
 
         try {
-            // 创建新的桥接客户端
-            val client =
-                    com.ai.assistance.operit.data.mcp.plugins.MCPBridgeClient(context, serverName)
+            // 使用McpClientProvider创建客户端
+            val client = McpClientProvider.getClient(context, serverName)
 
             // 尝试连接 - 带详细日志
             Log.d(TAG, "正在创建新的连接到服务: $serverName")
@@ -307,7 +306,7 @@ class MCPManager(private val context: Context) {
                 Log.w(TAG, "无法连接到服务: $serverName")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "创建桥接客户端时出错: ${e.message}", e)
+            Log.e(TAG, "创建MCP客户端时出错: ${e.message}", e)
         }
 
         return null

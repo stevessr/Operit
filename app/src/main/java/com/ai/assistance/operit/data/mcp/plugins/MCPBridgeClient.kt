@@ -1,6 +1,7 @@
 package com.ai.assistance.operit.data.mcp.plugins
 
 import android.content.Context
+import com.ai.assistance.operit.data.mcp.IMcpClient
 import android.util.Log
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
@@ -9,7 +10,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /** MCPBridgeClient - Client for communicating with MCP services through a bridge */
-class MCPBridgeClient(context: Context, private val serviceName: String) {
+class MCPBridgeClient(context: Context, override val serviceName: String) : IMcpClient {
     companion object {
         private const val TAG = "MCPBridgeClient"
     }
@@ -19,7 +20,7 @@ class MCPBridgeClient(context: Context, private val serviceName: String) {
     private var lastPingTime = 0L
 
     /** Connect to the MCP service */
-    suspend fun connect(): Boolean =
+    override suspend fun connect(): Boolean =
             withContext(Dispatchers.IO) {
                 try {
                     // Check if service is registered
@@ -70,10 +71,10 @@ class MCPBridgeClient(context: Context, private val serviceName: String) {
             }
 
     /** Check if connected */
-    fun isConnected(): Boolean = isConnected.get()
+    override fun isConnected(): Boolean = isConnected.get()
 
     /** Ping the service */
-    suspend fun ping(): Boolean =
+    override suspend fun ping(): Boolean =
             withContext(Dispatchers.IO) {
                 try {
                     val startTime = System.currentTimeMillis()
@@ -120,7 +121,7 @@ class MCPBridgeClient(context: Context, private val serviceName: String) {
     fun getLastPingTime(): Long = lastPingTime
 
     /** Call a tool on the MCP service */
-    suspend fun callTool(method: String, params: JSONObject): JSONObject? =
+    override suspend fun callTool(method: String, params: JSONObject): JSONObject? =
             withContext(Dispatchers.IO) {
                 try {
                     // Connect if not connected
@@ -207,7 +208,7 @@ class MCPBridgeClient(context: Context, private val serviceName: String) {
     }
 
     /** Get all tools provided by the service */
-    suspend fun getTools(): List<JSONObject> =
+    override suspend fun getTools(): List<JSONObject> =
             withContext(Dispatchers.IO) {
                 try {
                     // Connect if not connected
@@ -270,7 +271,7 @@ class MCPBridgeClient(context: Context, private val serviceName: String) {
             }
 
     /** Get tool names provided by the service as a simple list of strings */
-    suspend fun getToolNames(): List<String> = 
+    override suspend fun getToolNames(): List<String> = 
             withContext(Dispatchers.IO) {
                 try {
                     val tools = getTools()
@@ -282,7 +283,7 @@ class MCPBridgeClient(context: Context, private val serviceName: String) {
             }
 
     /** Get service info including tools count and running status */
-    suspend fun getServiceInfo(): ServiceInfo? =
+    override suspend fun getServiceInfo(): ServiceInfo? =
             withContext(Dispatchers.IO) {
                 try {
                     val listResponse = bridge.listMcpServices() ?: return@withContext null
@@ -319,7 +320,7 @@ class MCPBridgeClient(context: Context, private val serviceName: String) {
             }
 
     /** Disconnect from the service */
-    fun disconnect() {
+    override fun disconnect() {
         isConnected.set(false)
     }
 }
