@@ -31,6 +31,9 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
+    - name: Accept Android SDK licenses
+      run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
     - name: Cache Gradle packages
       uses: actions/cache@v4
       with:
@@ -48,6 +51,14 @@ jobs:
       run: |
         echo "GITHUB_CLIENT_ID=" >> local.properties
         echo "GITHUB_CLIENT_SECRET=" >> local.properties
+
+    - name: Debug Network and Build Environment
+      run: |
+        echo "Network connectivity test..."
+        curl -I https://dl.google.com/dl/android/maven2/ || echo "Google Maven repository not accessible"
+        curl -I https://repo1.maven.org/maven2/ || echo "Maven Central not accessible"
+        echo "Gradle version: $(./gradlew --version | head -5)"
+        echo "Java version: $(java -version)"
 
     - name: Run Lint
       run: ./gradlew lintDebug --stacktrace
@@ -76,7 +87,7 @@ jobs:
 
   build-release:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/copilot/')
 
     steps:
     - uses: actions/checkout@v4
@@ -122,7 +133,7 @@ jobs:
   nightly-release:
     runs-on: ubuntu-latest
     needs: [build, build-release]
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/copilot/')
 
     steps:
     - uses: actions/checkout@v4
