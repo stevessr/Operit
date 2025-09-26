@@ -1,0 +1,203 @@
+name: Manual Build Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+        - debug
+        - release
+        - both
+      branch:
+        description: 'Branch to build'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  manual-build:
+    runs-on: ubuntu-latest
+    name: Manual Build Test
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: 'recursive'
+        ref: ${{ github.event.inputs.branch || github.ref }}
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Accept Android SDK licenses
+      run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Create local.properties
+      run: |
+        echo "GITHUB_CLIENT_ID=" >> local.properties
+        echo "GITHUB_CLIENT_SECRET=" >> local.properties
+
+    - name: Environment Diagnostics
+      run: |
+        echo "=== Build Environment Diagnostics ==="
+        echo "Current branch: $(git branch --show-current)"
+        echo "Git HEAD: $(git rev-parse HEAD)"
+        echo "Build type requested: ${{ github.event.inputs.build_type }}"
+        echo ""
+        echo "=== Network Connectivity ==="
+        curl -I https://dl.google.com/dl/android/maven2/ && echo "✅ Google Maven accessible" || echo "❌ Google Maven not accessible"
+        curl -I https://repo1.maven.org/maven2/ && echo "✅ Maven Central accessible" || echo "❌ Maven Central not accessible"
+        curl -I https://plugins.gradle.org/m2/ && echo "✅ Gradle Plugin Portal accessible" || echo "❌ Gradle Plugin Portal not accessible"
+        echo ""
+        echo "=== Gradle and Java Versions ==="
+        ./gradlew --version
+        echo ""
+        echo "=== Android SDK Info ==="
+        echo "ANDROID_HOME: $ANDROID_HOME"
+        ls -la $ANDROID_HOME/ || echo "Android SDK directory not found"
+
+    - name: Clean Build
+      run: ./gradlew clean --stacktrace
+      continue-on-error: true
+
+    - name: Build Debug APK
+      if: ${{ github.event.inputs.build_type == 'debug' || github.event.inputs.build_type == 'both' }}
+      run: |
+        echo "Building Debug APK..."
+        ./gradlew assembleDebug --stacktrace --info
+      continue-on-error: true
+
+    - name: Build Release APK
+      if: ${{ github.event.inputs.build_type == 'release' || github.event.inputs.build_type == 'both' }}
+      run: |
+        echo "Building Release APK..."
+        ./gradlew assembleRelease --stacktrace --info
+      continue-on-error: true
+
+    - name: Check Build Outputs
+      run: |
+        echo "=== Build Output Check ==="
+        if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
+          echo "✅ Debug APK built successfully"
+          ls -la app/build/outputs/apk/debug/app-debug.apk
+        else
+          echo "❌ Debug APK not found"
+        fi
+        
+        if [ -f "app/build/outputs/apk/release/app-release.apk" ]; then
+          echo "✅ Release APK built successfully"
+          ls -la app/build/outputs/apk/release/app-release.apk
+        else
+          echo "❌ Release APK not found"
+        fi
+
+    - name: Upload Debug APK
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: manual-build-debug-${{ github.run_number }}
+        path: app/build/outputs/apk/debug/app-debug.apk
+        if-no-files-found: ignore
+
+    - name: Upload Release APK
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: manual-build-release-${{ github.run_number }}
+        path: app/build/outputs/apk/release/app-release.apk
+        if-no-files-found: ignore
+
+    - name: Upload Build Logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs-${{ github.run_number }}
+        path: |
+          build/reports/
+          app/build/reports/
+        if-no-files-found: ignore
+
+  create-test-nightly:
+    runs-on: ubuntu-latest
+    needs: manual-build
+    if: always() && startsWith(github.ref, 'refs/heads/copilot/')
+    name: Create Test Nightly Release
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Get build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts/
+
+    - name: Prepare test release
+      run: |
+        echo "Preparing test nightly release..."
+        mkdir -p release_files
+        find artifacts/ -name "*.apk" -exec cp {} release_files/ \; || echo "No APK files found"
+        ls -la release_files/
+
+    - name: Get current date and commit
+      id: date
+      run: |
+        echo "date=$(date +'%Y%m%d')" >> $GITHUB_OUTPUT
+        echo "datetime=$(date +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_OUTPUT
+        echo "commit=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        echo "branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
+
+    - name: Create Test Nightly Tag
+      run: |
+        BRANCH_NAME="${{ steps.date.outputs.branch }}"
+        TAG_NAME="test-nightly-${BRANCH_NAME}-${{ steps.date.outputs.date }}"
+        
+        # Delete existing tag if it exists
+        git tag -d "${TAG_NAME}" 2>/dev/null || true
+        git push origin ":refs/tags/${TAG_NAME}" 2>/dev/null || true
+        
+        # Create new tag
+        git tag "${TAG_NAME}"
+        git push origin "${TAG_NAME}"
+        
+        echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_ENV
+
+    - name: Create Test Nightly Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ env.TAG_NAME }}
+        name: "🧪 Test Nightly - ${{ steps.date.outputs.branch }} (${{ steps.date.outputs.date }})"
+        body: |
+          ## 🧪 Test Nightly Build - Manual Build Test
+          
+          **Build Information:**
+          - **Branch:** ${{ steps.date.outputs.branch }}
+          - **Date:** ${{ steps.date.outputs.datetime }}
+          - **Commit:** ${{ steps.date.outputs.commit }}
+          - **Build Type:** Manual triggered build
+          - **Android Support:** 7.0+ (API 24+)
+          
+          **⚠️ Important:** This is a test build from manual workflow. 
+          Use only for testing the build and release process.
+          
+          **🔧 Manual Build Status:**
+          - Triggered manually to test build process
+          - Includes diagnostic information
+          - May contain build artifacts even if main workflow fails
+        draft: false
+        prerelease: true
+        files: release_files/*
+        token: ${{ secrets.GITHUB_TOKEN }}
