@@ -877,7 +877,7 @@ class ApkReverseEngineer(private val context: Context) {
                     ApkSigner.Builder(signerConfigs)
                             .setInputApk(unsignedApk)
                             .setOutputApk(outputApk)
-                            .setMinSdkVersion(26) // 根据项目实际最低SDK版本调整
+                            .setMinSdkVersion(24) // 根据项目实际最低SDK版本调整 - 支持Android 7.0+
                             .build()
 
             try {

@@ -1,7 +1,9 @@
 buildscript {
     val objectboxVersion by extra("3.8.0")
     repositories {
+        google()
         mavenCentral()
+        gradlePluginPortal()
     }
     dependencies {
         classpath("io.objectbox:objectbox-gradle-plugin:$objectboxVersion")
