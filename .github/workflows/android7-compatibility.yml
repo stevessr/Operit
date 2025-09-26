@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ "main", "develop" ]
 
+permissions:
+  contents: write
+
 jobs:
   android7-test:
     runs-on: ubuntu-latest
